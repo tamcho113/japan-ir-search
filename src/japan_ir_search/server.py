@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -11,6 +12,8 @@ from .index import SearchIndex
 
 mcp = FastMCP(
     "japan-ir-search",
+    host=os.environ.get("MCP_HOST", "127.0.0.1"),
+    port=int(os.environ.get("MCP_PORT", "8000")),
     instructions="Full-text search over Japanese securities filings (EDINET). "
     "Search annual reports (有価証券報告書) text including risk factors, "
     "MD&A, business overview, and corporate governance sections.",
@@ -184,6 +187,10 @@ def _extract_keywords(text: str | None, min_length: int = 2) -> list[str]:
     return keywords
 
 
-def run_server() -> None:
-    """Start the MCP server."""
-    mcp.run()
+def run_server(transport: str = "stdio") -> None:
+    """Start the MCP server.
+
+    Args:
+        transport: 'stdio', 'sse', or 'streamable-http'
+    """
+    mcp.run(transport=transport)

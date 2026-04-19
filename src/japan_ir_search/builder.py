@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import date, timedelta
 from typing import Any
 
@@ -34,6 +35,11 @@ async def build_index_for_date(
     docs = await client.get_documents_by_date(target_date, doc_type="2")
 
     indexed = 0
+    skipped = 0
+    no_html = 0
+    errors = 0
+    docs_target = 0
+
     for doc in docs:
         doc_id = doc.get("docID")
         doc_type_code = doc.get("docTypeCode", "")
@@ -43,10 +49,12 @@ async def build_index_for_date(
         # Only index target document types
         if doc_type_code not in target_types:
             continue
+        docs_target += 1
 
         # Skip if already indexed (unless force)
         if not force and index.has_filing(doc_id):
             logger.debug("Skipping %s (already indexed)", doc_id)
+            skipped += 1
             continue
 
         logger.info("Indexing %s: %s (%s)", doc_id, doc.get("filerName", "?"), doc.get("docDescription", ""))
@@ -56,6 +64,7 @@ async def build_index_for_date(
             main_file = find_main_html_file(files)
             if main_file is None:
                 logger.warning("No HTML file found for %s", doc_id)
+                no_html += 1
                 continue
 
             _, html_bytes = main_file
@@ -65,9 +74,17 @@ async def build_index_for_date(
             indexed += 1
 
         except Exception:
+            errors += 1
             logger.exception("Failed to index %s", doc_id)
 
-    return indexed
+    return {
+        "indexed": indexed,
+        "skipped": skipped,
+        "no_html": no_html,
+        "errors": errors,
+        "docs_found": len(docs),
+        "docs_target": docs_target,
+    }
 
 
 async def build_index(
@@ -111,11 +128,32 @@ async def build_index(
             # Skip weekends (EDINET has no filings on weekends)
             if current.weekday() < 5:
                 try:
-                    count = await build_index_for_date(
+                    client.reset_metrics()
+                    t0 = time.monotonic()
+                    result = await build_index_for_date(
                         client, index, date_str,
                         target_types=target_types, force=force,
                     )
+                    elapsed = time.monotonic() - t0
+                    count = result["indexed"]
                     total_indexed += count
+                    total_skipped += result["skipped"]
+
+                    # Record build metrics
+                    api_metrics = client.get_metrics()
+                    index.record_build_metrics({
+                        "build_date": date.today().isoformat(),
+                        "target_date": date_str,
+                        "docs_found": result["docs_found"],
+                        "docs_target": result["docs_target"],
+                        "docs_indexed": result["indexed"],
+                        "docs_skipped": result["skipped"],
+                        "docs_no_html": result["no_html"],
+                        "docs_error": result["errors"],
+                        "elapsed_seconds": round(elapsed, 1),
+                        **api_metrics,
+                    })
+
                     if progress_callback:
                         progress_callback(date_str, count, day_num, total_days)
                 except Exception:

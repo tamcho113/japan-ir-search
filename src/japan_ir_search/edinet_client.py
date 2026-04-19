@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import zipfile
 from io import BytesIO
 from typing import Any
@@ -39,6 +40,39 @@ class EdinetClient:
             )
         self._client: httpx.AsyncClient | None = None
         self._last_request_time: float = 0
+        # Metrics counters
+        self.metrics_api_calls: int = 0
+        self.metrics_retries: int = 0
+        self.metrics_429_count: int = 0
+        self.metrics_5xx_count: int = 0
+        self.metrics_bytes_downloaded: int = 0
+        self._response_times: list[float] = []
+
+    def reset_metrics(self) -> None:
+        """Reset per-date metrics counters."""
+        self.metrics_api_calls = 0
+        self.metrics_retries = 0
+        self.metrics_429_count = 0
+        self.metrics_5xx_count = 0
+        self.metrics_bytes_downloaded = 0
+        self._response_times = []
+
+    def get_metrics(self) -> dict[str, Any]:
+        """Return current metrics snapshot."""
+        avg_ms = (
+            sum(self._response_times) / len(self._response_times) * 1000
+            if self._response_times else None
+        )
+        max_ms = max(self._response_times) * 1000 if self._response_times else None
+        return {
+            "api_calls": self.metrics_api_calls,
+            "api_retries": self.metrics_retries,
+            "api_429_count": self.metrics_429_count,
+            "api_5xx_count": self.metrics_5xx_count,
+            "total_bytes_downloaded": self.metrics_bytes_downloaded,
+            "avg_response_ms": round(avg_ms, 1) if avg_ms else None,
+            "max_response_ms": round(max_ms, 1) if max_ms else None,
+        }
 
     async def _ensure_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -61,25 +95,36 @@ class EdinetClient:
 
         for attempt in range(_MAX_RETRIES):
             await self._rate_limit()
+            self.metrics_api_calls += 1
+            t0 = time.monotonic()
             try:
                 response = await client.get(url, params=params)
             except httpx.TransportError as exc:
                 logger.warning("Network error (attempt %d/%d): %s", attempt + 1, _MAX_RETRIES, exc)
+                self.metrics_retries += 1
                 if attempt == _MAX_RETRIES - 1:
                     raise
                 await asyncio.sleep(_RETRY_BASE_DELAY * (2 ** attempt))
                 continue
 
+            elapsed = time.monotonic() - t0
+            self._response_times.append(elapsed)
+            self.metrics_bytes_downloaded += len(response.content)
+
             if response.status_code == 200:
                 return response
 
             if response.status_code == 429:  # Rate limited
+                self.metrics_429_count += 1
+                self.metrics_retries += 1
                 delay = _RETRY_BASE_DELAY * (2 ** attempt)
                 logger.warning("Rate limited (429). Waiting %.0fs (attempt %d/%d)", delay, attempt + 1, _MAX_RETRIES)
                 await asyncio.sleep(delay)
                 continue
 
             if response.status_code >= 500:  # Server error, retry
+                self.metrics_5xx_count += 1
+                self.metrics_retries += 1
                 delay = _RETRY_BASE_DELAY * (2 ** attempt)
                 logger.warning("Server error %d. Waiting %.0fs (attempt %d/%d)", response.status_code, delay, attempt + 1, _MAX_RETRIES)
                 await asyncio.sleep(delay)

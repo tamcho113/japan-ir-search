@@ -321,8 +321,9 @@ class SearchIndex:
             where_sql = "AND " + " AND ".join(where_clauses)
 
         params.append(limit)
-        # Join FTS results to filing_sections/filings via doc_id + section_key
-        # (rowid matching is unreliable between FTS and regular tables)
+        # Join FTS results to filing_sections via rowid (contentless FTS doesn't
+        # return UNINDEXED column values on SELECT, so we rely on the rowid
+        # assigned at insert matching filing_sections.rowid).
         sql = f"""
             SELECT
                 f.doc_id,
@@ -337,9 +338,8 @@ class SearchIndex:
                 fs.section_text,
                 fts.rank
             FROM filings_fts fts
-            JOIN filing_sections fs
-                ON fs.doc_id = fts.doc_id AND fs.section_key = fts.section_key
-            JOIN filings f ON f.doc_id = fts.doc_id
+            JOIN filing_sections fs ON fs.rowid = fts.rowid
+            JOIN filings f ON f.doc_id = fs.doc_id
             WHERE filings_fts MATCH ?
             {where_sql}
             ORDER BY fts.rank

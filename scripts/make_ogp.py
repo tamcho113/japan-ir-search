@@ -74,15 +74,20 @@ def main() -> None:
     d.text((pad_x, y), "Claude / VS Code / Cursor から、有報・四半期報告書を", font=lead_f, fill=MUTED)
     y += 42
     d.text((pad_x, y), "AI と一緒にすぐ検索。", font=lead_f, fill=MUTED)
+    y += 56
+
+    # Coverage tagline
+    cov_f = font(FONT_BOLD, 26)
+    d.text((pad_x, y), "✓ 全上場企業 + 投資信託・REIT・外国会社等を網羅", font=cov_f, fill=ACCENT)
 
     # Stats row (bottom)
-    stats_y = 470
-    stat_num_f = font(FONT_HEAVY, 56)
-    stat_lbl_f = font(FONT_REG, 22)
+    stats_y = 480
+    stat_num_f = font(FONT_HEAVY, 48)
+    stat_lbl_f = font(FONT_REG, 20)
 
     stats = [
         ("55,131", "件の書類"),
-        ("6,984", "社"),
+        ("6,984", "提出者"),
         ("2 年分", "2024-2026"),
     ]
     col_w = (W - pad_x * 2) // 3

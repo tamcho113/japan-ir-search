@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>japan-ir-search — AIに日本企業の有報を読ませる MCP サーバー</title>
+<meta name="description" content="Claude / Cursor / VS Code Copilot から、日本の有価証券報告書を全文検索できる MCP サーバー。設定は1分、APIキー不要のベータ版を公開中。">
+<meta property="og:title" content="japan-ir-search — AIに日本企業の有報を読ませる">
+<meta property="og:description" content="Claude / Cursor / Copilot から有報を全文検索。1分で繋がるベータ版を公開中。">
+<meta property="og:image" content="https://tamcho113.github.io/japan-ir-search/assets/og.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>">
+<style>
+:root{
+  --bg:#fafaf7;--ink:#1a1a1a;--muted:#666;--accent:#0f6cbd;--accent-dark:#0a4d8c;
+  --card:#fff;--border:#e5e5e0;--code-bg:#1e1e2e;--code-ink:#e4e4e7;
+  --max:1080px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;
+  background:var(--bg);color:var(--ink);line-height:1.7;-webkit-font-smoothing:antialiased;
+}
+.container{max-width:var(--max);margin:0 auto;padding:0 24px}
+h1,h2,h3{line-height:1.3;letter-spacing:-.01em}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:.92em}
+
+/* Nav */
+nav{padding:20px 0;border-bottom:1px solid var(--border);background:rgba(250,250,247,.85);backdrop-filter:blur(8px);position:sticky;top:0;z-index:10}
+nav .container{display:flex;align-items:center;justify-content:space-between}
+nav .logo{font-weight:700;font-size:1.1rem}
+nav .logo span{opacity:.5;font-weight:400;margin-left:6px;font-size:.85em}
+nav .links a{color:var(--ink);margin-left:20px;font-size:.95rem}
+
+/* Hero */
+.hero{padding:32px 0 40px;text-align:center}
+.beta-badge{display:inline-block;background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:99px;font-size:.75rem;font-weight:600;margin-bottom:14px;border:1px solid #fcd34d}
+.hero h1{font-size:clamp(1.7rem,3.8vw,2.6rem);margin:0 0 12px;font-weight:800}
+.hero h1 .highlight{background:linear-gradient(180deg,transparent 60%,#fde68a 60%)}
+.hero p.lead{font-size:1.05rem;color:var(--muted);margin:0 auto 22px;max-width:640px;line-break:strict;word-break:auto-phrase}
+.hero p.lead .nobr{display:inline-block;white-space:nowrap}
+.cta{display:inline-flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.btn{display:inline-block;padding:11px 22px;border-radius:8px;font-weight:600;font-size:.95rem;transition:transform .1s,box-shadow .2s}
+.btn:hover{text-decoration:none;transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-dark);color:#fff}
+.btn-secondary{background:#fff;color:var(--ink);border:1px solid var(--border)}
+
+/* Demo video — sized to fit viewport on first paint */
+.demo{margin:28px auto 0;width:100%;max-width:880px;border-radius:12px;overflow:hidden;box-shadow:0 20px 60px -20px rgba(0,0,0,.25);border:1px solid var(--border);background:#000;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;color:#666;font-size:.9rem}
+.demo video{width:100%;height:100%;display:block;object-fit:cover}
+.demo .placeholder{padding:40px;text-align:center;color:#888}
+.demo .placeholder strong{color:#ccc;font-size:1.1rem;display:block;margin-bottom:8px}
+
+/* On taller screens, cap demo height so it always fits above the fold */
+@media (min-height:780px) and (min-width:760px){
+  .demo{max-height:calc(100vh - 380px);width:auto;aspect-ratio:16/9}
+  .demo video{width:auto;height:100%;max-width:100%}
+}
+
+/* Sections */
+section{padding:64px 0}
+section h2{font-size:2rem;margin:0 0 12px;text-align:center}
+section .sub{text-align:center;color:var(--muted);margin:0 auto 48px;max-width:560px}
+
+/* Examples grid */
+.examples{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.example{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px;transition:border-color .2s}
+.example:hover{border-color:var(--accent)}
+.example .icon{font-size:1.5rem;margin-bottom:8px}
+.example .q{font-weight:600;margin-bottom:6px;font-size:1rem}
+.example .a{color:var(--muted);font-size:.9rem;margin:0}
+
+/* Setup tabs */
+.tabs{max-width:720px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.tab-buttons{display:flex;border-bottom:1px solid var(--border);background:#f5f5f0}
+.tab-btn{flex:1;padding:14px 8px;background:none;border:none;cursor:pointer;font-size:.95rem;font-weight:500;color:var(--muted);font-family:inherit;border-bottom:2px solid transparent;transition:all .15s}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);background:#fff}
+.tab-content{display:none;padding:24px}
+.tab-content.active{display:block}
+.steps{counter-reset:step;padding:0;margin:0;list-style:none}
+.steps > li{counter-increment:step;position:relative;padding-left:40px;margin-bottom:20px;list-style:none}
+.steps > li::before{content:counter(step);position:absolute;left:0;top:0;width:28px;height:28px;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:.85rem}
+.code-block{background:var(--code-bg);color:var(--code-ink);padding:16px;border-radius:8px;overflow-x:auto;position:relative;margin-top:8px}
+.code-block pre{margin:0;white-space:pre;font-family:"SF Mono","Menlo","Consolas","Courier New",monospace;font-size:.85rem;line-height:1.55;color:var(--code-ink);font-feature-settings:normal;font-variant-ligatures:none}
+.copy-btn{position:absolute;top:8px;right:8px;background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.2);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.75rem;font-family:inherit;transition:background .15s;white-space:nowrap;min-width:auto}
+.copy-btn:hover{background:rgba(255,255,255,.2)}
+.copy-btn.copied{background:#16a34a;border-color:#16a34a}
+.config-path{font-size:.85rem;color:var(--muted);margin-bottom:6px}
+.path-list{list-style:none;padding:0;margin:8px 0 0;font-size:.85rem}
+.path-list li{padding:6px 0;border-top:1px dashed var(--border);display:flex;align-items:baseline;flex-wrap:wrap;gap:8px}
+.path-list li:first-child{border-top:none}
+.path-list .os{display:inline-block;background:#eef4fb;color:var(--accent-dark);font-size:.7rem;font-weight:600;padding:2px 8px;border-radius:4px;min-width:64px;text-align:center;flex-shrink:0}
+.path-list code{font-size:.8rem;color:var(--ink);word-break:break-all}
+
+/* FAQ */
+.faq{max-width:720px;margin:0 auto}
+.faq details{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin-bottom:8px}
+.faq summary{cursor:pointer;font-weight:600;outline:none}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";float:right;font-size:1.2rem;color:var(--muted);transition:transform .2s}
+.faq details[open] summary::after{transform:rotate(45deg)}
+.faq details p{margin:12px 0 0;color:var(--muted)}
+
+/* Beta notice */
+.notice{background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:20px 24px;max-width:720px;margin:0 auto;font-size:.95rem}
+.notice strong{color:#92400e}
+
+/* Footer */
+footer{padding:48px 0;border-top:1px solid var(--border);text-align:center;color:var(--muted);font-size:.9rem}
+footer a{margin:0 12px}
+
+/* Mobile */
+@media(max-width:640px){
+  .hero{padding:40px 0 32px}
+  section{padding:48px 0}
+  nav .links a{margin-left:12px;font-size:.9rem}
+  nav .logo span{display:none}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="container">
+    <div class="logo">📊 japan-ir-search<span>EDINET MCP</span></div>
+    <div class="links">
+      <a href="#setup">使い方</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/tamcho113/japan-ir-search" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="container">
+    <span class="beta-badge">🧪 ベータ公開中・APIキー不要</span>
+    <h1>AIに、日本企業の<br><span class="highlight">「有報」を読ませる。</span></h1>
+    <p class="lead">
+      <span class="nobr">Claude / Cursor / VS Code Copilot から、</span><span class="nobr">3.7万件超の有価証券報告書・四半期報告書を全文検索。</span><br>
+      <span class="nobr">設定は1分、無料で試せます。</span>
+    </p>
+    <div class="cta">
+      <a href="#setup" class="btn btn-primary">1分で始める →</a>
+      <a href="https://github.com/tamcho113/japan-ir-search" class="btn btn-secondary" target="_blank" rel="noopener">GitHub を見る</a>
+    </div>
+
+    <div class="demo">
+      <video autoplay loop muted playsinline preload="metadata" poster="assets/demo-poster.jpg">
+        <source src="assets/demo.mp4" type="video/mp4">
+      </video>
+    </div>
+  </div>
+</header>
+
+<section id="examples">
+  <div class="container">
+    <h2>こんな質問ができます</h2>
+    <p class="sub">AI に話しかけるだけ。裏で 6,300 社の有報を横断検索します。</p>
+    <div class="examples">
+      <div class="example">
+        <div class="icon">🔍</div>
+        <p class="q">半導体サプライチェーンリスクに言及している企業を5社挙げて</p>
+        <p class="a">→ 業界横断でリスク記述を抽出・要約</p>
+      </div>
+      <div class="example">
+        <div class="icon">📈</div>
+        <p class="q">ソニーの当期と前期の事業等のリスクを比較して</p>
+        <p class="a">→ 新出論点と消えた論点を自動検出</p>
+      </div>
+      <div class="example">
+        <div class="icon">🏢</div>
+        <p class="q">人的資本の開示で踏み込んだ書き方をしている企業の例は？</p>
+        <p class="a">→ テーマ別の優良開示事例を抽出</p>
+      </div>
+      <div class="example">
+        <div class="icon">💼</div>
+        <p class="q">大量保有報告書でアクティビストの動きがある企業を直近で探して</p>
+        <p class="a">→ 大量保有報告書まで横断検索</p>
+      </div>
+      <div class="example">
+        <div class="icon">⚡</div>
+        <p class="q">臨時報告書でM&Aに言及している直近の書類は？</p>
+        <p class="a">→ 書類種別を絞った検索も可能</p>
+      </div>
+      <div class="example">
+        <div class="icon">🌏</div>
+        <p class="q">地政学リスクに言及している自動車メーカーを探して</p>
+        <p class="a">→ 業界 × テーマの掛け合わせ検索</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="setup" style="background:#fff;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+  <div class="container">
+    <h2>1分でセットアップ</h2>
+    <p class="sub">お使いの AI クライアントに JSON を貼るだけ。</p>
+
+    <div class="tabs">
+      <div class="tab-buttons">
+        <button class="tab-btn active" data-tab="claude">Claude Desktop</button>
+        <button class="tab-btn" data-tab="vscode">VS Code</button>
+        <button class="tab-btn" data-tab="cursor">Cursor</button>
+      </div>
+
+      <div class="tab-content active" data-content="claude">
+        <ol class="steps">
+          <li>
+            Claude Desktop の <strong>設定 → Developer → Edit Config</strong> を開く<br>
+            <small style="color:var(--muted)">設定ファイルの場所:</small>
+            <ul class="path-list">
+              <li><span class="os">macOS</span> <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
+              <li><span class="os">Windows</span> <code>%APPDATA%\Claude\claude_desktop_config.json</code></li>
+              <li><span class="os">Linux</span> <code>~/.config/Claude/claude_desktop_config.json</code></li>
+            </ul>
+          </li>
+          <li>
+            下記の JSON を貼り付け（既に <code>mcpServers</code> がある場合は中身に追記）
+            <div class="code-block">
+              <button class="copy-btn" data-target="code-claude">コピー</button>
+<pre id="code-claude">{
+  "mcpServers": {
+    "japan-ir-search": {
+      "type": "http",
+      "url": "https://japan-ir-search.fly.dev/mcp"
+    }
+  }
+}</pre>
+            </div>
+          </li>
+          <li>Claude Desktop を再起動</li>
+          <li>「ソニーの最新の事業等のリスクを見せて」と聞いてみる 🎉</li>
+        </ol>
+      </div>
+
+      <div class="tab-content" data-content="vscode">
+        <ol class="steps">
+          <li>
+            <strong>ワークスペースに <code>.vscode/mcp.json</code> を作成</strong>（推奨）<br>
+            <small style="color:var(--muted)">またはユーザー設定で全プロジェクト共通にする場合:</small>
+            <ul class="path-list">
+              <li><span class="os">macOS</span> <code>~/Library/Application Support/Code/User/mcp.json</code></li>
+              <li><span class="os">Windows</span> <code>%APPDATA%\Code\User\mcp.json</code></li>
+              <li><span class="os">Linux</span> <code>~/.config/Code/User/mcp.json</code></li>
+            </ul>
+          </li>
+          <li>
+            下記の JSON を貼り付け
+            <div class="code-block">
+              <button class="copy-btn" data-target="code-vscode">コピー</button>
+<pre id="code-vscode">{
+  "servers": {
+    "japan-ir-search": {
+      "type": "http",
+      "url": "https://japan-ir-search.fly.dev/mcp"
+    }
+  }
+}</pre>
+            </div>
+          </li>
+          <li>Copilot Chat を Agent モードで開く</li>
+          <li>「ソニーの最新の事業等のリスクを見せて」と聞いてみる 🎉</li>
+        </ol>
+      </div>
+
+      <div class="tab-content" data-content="cursor">
+        <ol class="steps">
+          <li>
+            設定ファイルを作成（または編集）:
+            <ul class="path-list">
+              <li><span class="os">macOS / Linux</span> <code>~/.cursor/mcp.json</code></li>
+              <li><span class="os">Windows</span> <code>%USERPROFILE%\.cursor\mcp.json</code></li>
+            </ul>
+          </li>
+          <li>
+            下記の JSON を貼り付け
+            <div class="code-block">
+              <button class="copy-btn" data-target="code-cursor">コピー</button>
+<pre id="code-cursor">{
+  "mcpServers": {
+    "japan-ir-search": {
+      "url": "https://japan-ir-search.fly.dev/mcp"
+    }
+  }
+}</pre>
+            </div>
+          </li>
+          <li>Cursor を再起動</li>
+          <li>「ソニーの最新の事業等のリスクを見せて」と聞いてみる 🎉</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="container">
+    <h2>よくある質問</h2>
+    <p class="sub">&nbsp;</p>
+    <div class="faq">
+      <details>
+        <summary>本当に無料ですか？</summary>
+        <p>はい、ベータ期間中は完全無料・APIキー不要です。個人プロジェクトとして運用しているため、将来的に方針が変わる可能性はあります。</p>
+      </details>
+      <details>
+        <summary>データは安全ですか？</summary>
+        <p>このサービスが扱うのは、金融庁が EDINET で公開している<strong>誰でもアクセス可能な開示書類のテキストのみ</strong>です。ユーザーの入力した質問内容はサーバーに保存されません（Fly.io のアクセスログには HTTP リクエスト情報が一時的に残ります）。</p>
+      </details>
+      <details>
+        <summary>何件くらい入っていますか？</summary>
+        <p>直近1年分・全18種類の書類を収録しており、約 <strong>37,000 件 / 6,300 社</strong>のデータが検索対象です。日次バッチで新規開示分を追記しています。</p>
+      </details>
+      <details>
+        <summary>ChatGPT でも使えますか？</summary>
+        <p>ChatGPT のデスクトップ版や一部プランで MCP がサポートされ次第、同じ URL で接続できる予定です。現在は Claude Desktop / Cursor / VS Code Copilot で動作確認済みです。</p>
+      </details>
+      <details>
+        <summary>初回のレスポンスが遅い気がします</summary>
+        <p>コスト削減のためアイドル時はサーバーを停止しています。最初のリクエストのみ <strong>3〜10 秒</strong>かかります（コールドスタート）。2 回目以降は高速です。</p>
+      </details>
+      <details>
+        <summary>業務利用してもよいですか？</summary>
+        <p>ベータ運用のため<strong>無保証・予告なく停止する可能性があります</strong>。本格的な業務利用には、GitHub からソースを取得してご自身の環境に構築することをおすすめします。</p>
+      </details>
+      <details>
+        <summary>もっと長期間のデータが欲しい</summary>
+        <p>ローカル構築すれば過去 N 年分のインデックスを自分で構築できます。<a href="https://github.com/tamcho113/japan-ir-search#セットアップ">GitHub の README</a> を参照してください。</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section style="background:#fff;border-top:1px solid var(--border)">
+  <div class="container">
+    <div class="notice">
+      <strong>⚠️ ベータ運用に関する注意</strong>
+      <p style="margin:8px 0 0">
+        個人運用の実験的サービスです。無保証・予告なく停止・破壊的変更があります。
+        ミッションクリティカルな用途には<a href="https://github.com/tamcho113/japan-ir-search#セットアップ">ローカル構築</a>を推奨します。
+      </p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>
+      <a href="https://github.com/tamcho113/japan-ir-search" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://note.com/__NOTE_USER__" target="_blank" rel="noopener">Note 記事</a>
+      <a href="https://disclosure.edinet-fsa.go.jp/" target="_blank" rel="noopener">EDINET</a>
+    </p>
+    <p style="margin-top:16px">
+      © 2026 japan-ir-search · MIT License<br>
+      <small>EDINET の開示データは <a href="https://www.digital.go.jp/resources/open_data/" target="_blank" rel="noopener">公共データライセンス 1.0</a> に基づきます</small>
+    </p>
+  </div>
+</footer>
+
+<script>
+// Tab switching
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const tab=btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+    document.querySelectorAll('.tab-content').forEach(c=>c.classList.toggle('active',c.dataset.content===tab));
+  });
+});
+
+// Copy buttons
+document.querySelectorAll('.copy-btn').forEach(btn=>{
+  btn.addEventListener('click',async()=>{
+    const target=document.getElementById(btn.dataset.target);
+    if(!target)return;
+    try{
+      await navigator.clipboard.writeText(target.textContent);
+      const original=btn.textContent;
+      btn.textContent='コピーしました ✓';
+      btn.classList.add('copied');
+      setTimeout(()=>{btn.textContent=original;btn.classList.remove('copied');},1800);
+    }catch(e){console.error(e);}
+  });
+});
+</script>
+
+</body>
+</html>

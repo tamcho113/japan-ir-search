@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://japan-ir-search.pages.dev/sitemap.xml

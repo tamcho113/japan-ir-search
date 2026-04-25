@@ -14,3 +14,7 @@ wheels/
 
 .github/
 nohup.out
+
+# Internal docs (not for public repo)
+docs/launch-plan.md
+docs/note-article-draft.md

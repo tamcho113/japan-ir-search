@@ -51,10 +51,12 @@ nav .links a{color:var(--ink);margin-left:20px;font-size:.95rem}
 .btn-secondary{background:#fff;color:var(--ink);border:1px solid var(--border)}
 
 /* Demo video — sized to fit viewport on first paint */
-.demo{margin:28px auto 0;width:100%;max-width:880px;border-radius:12px;overflow:hidden;box-shadow:0 20px 60px -20px rgba(0,0,0,.25);border:1px solid var(--border);background:#000;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;color:#666;font-size:.9rem}
+.demo{margin:28px auto 0;width:100%;max-width:880px;border-radius:12px;overflow:hidden;box-shadow:0 20px 60px -20px rgba(0,0,0,.25);border:1px solid var(--border);background:#000;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;color:#666;font-size:.9rem;position:relative}
 .demo video{width:100%;height:100%;display:block;object-fit:cover}
 .demo .placeholder{padding:40px;text-align:center;color:#888}
 .demo .placeholder strong{color:#ccc;font-size:1.1rem;display:block;margin-bottom:8px}
+.replay-btn{position:absolute;inset:0;margin:auto;width:fit-content;height:fit-content;background:rgba(255,255,255,.95);color:var(--ink);border:none;padding:12px 24px;border-radius:99px;font-size:1rem;font-weight:600;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.3);font-family:inherit;transition:transform .15s,background .15s}
+.replay-btn:hover{background:#fff;transform:scale(1.05)}
 
 /* On taller screens, cap demo height so it always fits above the fold */
 @media (min-height:780px) and (min-width:760px){
@@ -122,6 +124,11 @@ footer a{margin:0 12px}
   nav .logo span{display:none}
 }
 </style>
+
+<!-- GoatCounter analytics (privacy-friendly, cookie-less) -->
+<!-- TODO: Sign up at https://www.goatcounter.com/signup and replace YOUR_SITE_CODE -->
+<script data-goatcounter="https://YOUR_SITE_CODE.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
 </head>
 <body>
 
@@ -141,7 +148,7 @@ footer a{margin:0 12px}
     <span class="beta-badge">🧪 ベータ公開中・APIキー不要</span>
     <h1>AIに、日本企業の<br><span class="highlight">「有報」を読ませる。</span></h1>
     <p class="lead">
-      <span class="nobr">Claude / Cursor / VS Code Copilot から、</span><span class="nobr">3.7万件超の有価証券報告書・四半期報告書を全文検索。</span><br>
+      <span class="nobr">Claude / Cursor / VS Code Copilot から、</span><span class="nobr">5.5万件超の有価証券報告書・四半期報告書を全文検索。</span><br>
       <span class="nobr">設定は1分、無料で試せます。</span>
     </p>
     <div class="cta">
@@ -150,9 +157,10 @@ footer a{margin:0 12px}
     </div>
 
     <div class="demo">
-      <video autoplay loop muted playsinline preload="metadata" poster="assets/demo-poster.jpg">
+      <video id="hero-video" autoplay muted playsinline preload="metadata" poster="assets/demo-poster.jpg">
         <source src="assets/demo.mp4" type="video/mp4">
       </video>
+      <button id="replay-btn" class="replay-btn" aria-label="もう一度再生" hidden>▶ もう一度見る</button>
     </div>
   </div>
 </header>
@@ -313,7 +321,7 @@ footer a{margin:0 12px}
       </details>
       <details>
         <summary>何件くらい入っていますか？</summary>
-        <p>直近1年分・全18種類の書類を収録しており、約 <strong>37,000 件 / 6,300 社</strong>のデータが検索対象です。日次バッチで新規開示分を追記しています。</p>
+        <p>直近2年分・全18種類の書類を収録しており、約 <strong>55,000 件 / 6,900 社</strong>のデータが検索対象です。日次バッチで新規開示分を追記しています。</p>
       </details>
       <details>
         <summary>ChatGPT でも使えますか？</summary>
@@ -385,6 +393,15 @@ document.querySelectorAll('.copy-btn').forEach(btn=>{
     }catch(e){console.error(e);}
   });
 });
+
+// Replay button for hero video
+(function(){
+  const v=document.getElementById('hero-video');
+  const btn=document.getElementById('replay-btn');
+  if(!v||!btn)return;
+  v.addEventListener('ended',()=>{btn.hidden=false;});
+  btn.addEventListener('click',()=>{btn.hidden=true;v.currentTime=0;v.play();});
+})();
 </script>
 
 </body>

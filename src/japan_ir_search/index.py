@@ -9,7 +9,7 @@ from typing import Any, Generator
 
 from .config import DB_PATH
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 _CREATE_TABLES = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -42,6 +42,25 @@ CREATE TABLE IF NOT EXISTS filing_sections (
     PRIMARY KEY (doc_id, section_key),
     FOREIGN KEY (doc_id) REFERENCES filings(doc_id)
 );
+
+-- MCP tool usage logging (lightweight analytics).
+-- Privacy: only the first 30 chars of the query are stored, full text is hashed.
+CREATE TABLE IF NOT EXISTS mcp_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL DEFAULT (datetime('now')),
+    tool_name TEXT NOT NULL,
+    query_preview TEXT,
+    query_hash TEXT,
+    has_section INTEGER DEFAULT 0,
+    has_company INTEGER DEFAULT 0,
+    section_key TEXT,
+    result_count INTEGER,
+    elapsed_ms REAL,
+    error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_mcp_usage_ts ON mcp_usage(ts);
+CREATE INDEX IF NOT EXISTS idx_mcp_usage_tool ON mcp_usage(tool_name);
 
 -- Build metrics for monitoring
 CREATE TABLE IF NOT EXISTS build_metrics (
@@ -163,6 +182,30 @@ class SearchIndex:
                 "SELECT fs.rowid, fs.doc_id, f.company_name, fs.section_key, fs.section_text "
                 "FROM filing_sections fs JOIN filings f ON f.doc_id = fs.doc_id"
             )
+            conn.execute(
+                "UPDATE schema_version SET version = ?", (2,)
+            )
+
+        if from_version < 3:
+            # v2→v3: Add mcp_usage table (already created idempotently by
+            # _CREATE_TABLES on initialize, but ensure it exists for legacy DBs).
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS mcp_usage (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts TEXT NOT NULL DEFAULT (datetime('now')),
+                    tool_name TEXT NOT NULL,
+                    query_preview TEXT,
+                    query_hash TEXT,
+                    has_section INTEGER DEFAULT 0,
+                    has_company INTEGER DEFAULT 0,
+                    section_key TEXT,
+                    result_count INTEGER,
+                    elapsed_ms REAL,
+                    error TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_mcp_usage_ts ON mcp_usage(ts);
+                CREATE INDEX IF NOT EXISTS idx_mcp_usage_tool ON mcp_usage(tool_name);
+            """)
             conn.execute(
                 "UPDATE schema_version SET version = ?", (_SCHEMA_VERSION,)
             )
@@ -690,3 +733,132 @@ class SearchIndex:
             if row is None or row[0] == 0:
                 return {"message": "No build metrics recorded yet"}
             return dict(row)
+
+    def record_usage(
+        self,
+        tool_name: str,
+        *,
+        query: str | None = None,
+        section: str | None = None,
+        company: str | None = None,
+        result_count: int | None = None,
+        elapsed_ms: float | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Record one MCP tool invocation. Best-effort, never raises."""
+        try:
+            preview: str | None = None
+            qhash: str | None = None
+            if query:
+                preview = query[:30]
+                import hashlib
+                qhash = hashlib.sha256(query.encode("utf-8")).hexdigest()[:16]
+            with self._connect() as conn:
+                conn.execute(
+                    """INSERT INTO mcp_usage
+                       (tool_name, query_preview, query_hash,
+                        has_section, has_company, section_key,
+                        result_count, elapsed_ms, error)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        tool_name,
+                        preview,
+                        qhash,
+                        1 if section else 0,
+                        1 if company else 0,
+                        section,
+                        result_count,
+                        elapsed_ms,
+                        error,
+                    ),
+                )
+                conn.commit()
+        except Exception:
+            # Never let analytics break tool execution.
+            pass
+
+    def get_usage_summary(self, since_days: int = 7) -> dict[str, Any]:
+        """Summarize MCP tool usage over the last N days."""
+        with self._connect(readonly=True) as conn:
+            tables = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='mcp_usage'"
+            ).fetchone()
+            if tables is None:
+                return {"message": "No usage data recorded yet (table not created)"}
+
+            cutoff = f"datetime('now', '-{int(since_days)} days')"
+
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM mcp_usage WHERE ts >= {cutoff}"
+            ).fetchone()[0]
+            if total == 0:
+                return {
+                    "since_days": since_days,
+                    "total_calls": 0,
+                    "by_tool": [],
+                    "top_queries": [],
+                    "section_usage": [],
+                    "errors": 0,
+                }
+
+            by_tool = [
+                dict(row) for row in conn.execute(
+                    f"""SELECT tool_name,
+                              COUNT(*) AS calls,
+                              CAST(AVG(elapsed_ms) AS INTEGER) AS avg_ms,
+                              CAST(AVG(result_count) AS INTEGER) AS avg_results,
+                              SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) AS errors
+                       FROM mcp_usage
+                       WHERE ts >= {cutoff}
+                       GROUP BY tool_name
+                       ORDER BY calls DESC"""
+                ).fetchall()
+            ]
+
+            # Top query previews (deduplicated by hash)
+            top_queries = [
+                dict(row) for row in conn.execute(
+                    f"""SELECT query_preview,
+                              COUNT(*) AS calls,
+                              MAX(ts) AS last_seen
+                       FROM mcp_usage
+                       WHERE ts >= {cutoff} AND query_preview IS NOT NULL
+                       GROUP BY query_hash
+                       ORDER BY calls DESC, last_seen DESC
+                       LIMIT 20"""
+                ).fetchall()
+            ]
+
+            section_usage = [
+                dict(row) for row in conn.execute(
+                    f"""SELECT section_key, COUNT(*) AS calls
+                       FROM mcp_usage
+                       WHERE ts >= {cutoff} AND section_key IS NOT NULL
+                       GROUP BY section_key
+                       ORDER BY calls DESC"""
+                ).fetchall()
+            ]
+
+            errors = conn.execute(
+                f"SELECT COUNT(*) FROM mcp_usage WHERE ts >= {cutoff} AND error IS NOT NULL"
+            ).fetchone()[0]
+
+            daily = [
+                dict(row) for row in conn.execute(
+                    f"""SELECT substr(ts, 1, 10) AS day, COUNT(*) AS calls
+                       FROM mcp_usage
+                       WHERE ts >= {cutoff}
+                       GROUP BY day
+                       ORDER BY day"""
+                ).fetchall()
+            ]
+
+            return {
+                "since_days": since_days,
+                "total_calls": total,
+                "by_tool": by_tool,
+                "top_queries": top_queries,
+                "section_usage": section_usage,
+                "daily": daily,
+                "errors": errors,
+            }

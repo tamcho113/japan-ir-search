@@ -354,6 +354,61 @@ def rebuild_sections(db_path: str | None, batch_size: int) -> None:
 
 
 @main.command()
+@click.option("--since", "-s", default=7, help="Lookback window in days (default: 7)")
+@click.option("--json-output", "-j", is_flag=True, help="Output as JSON")
+@click.option("--db-path", type=str, default=None, help="Custom database path")
+def usage(since: int, json_output: bool, db_path: str | None) -> None:
+    """Show MCP tool usage analytics over the last N days."""
+    import json as json_mod
+
+    from .index import SearchIndex
+
+    index = SearchIndex(db_path)
+    data = index.get_usage_summary(since_days=since)
+
+    if json_output:
+        click.echo(json_mod.dumps(data, ensure_ascii=False, indent=2))
+        return
+
+    if "message" in data:
+        click.echo(data["message"])
+        return
+
+    click.echo("=" * 60)
+    click.echo(f"  MCP USAGE — last {data['since_days']} days")
+    click.echo("=" * 60)
+    click.echo(f"\nTotal calls: {data['total_calls']:,}   Errors: {data['errors']}")
+
+    click.echo(f"\n📞 By Tool")
+    for t in data["by_tool"]:
+        avg_ms = t["avg_ms"] if t["avg_ms"] is not None else 0
+        avg_results = t["avg_results"] if t["avg_results"] is not None else 0
+        click.echo(
+            f"  {t['tool_name']:25s}: {t['calls']:>5,} calls  "
+            f"avg {avg_ms:>5,} ms  avg {avg_results:>4} results  "
+            f"errors {t['errors']}"
+        )
+
+    if data.get("section_usage"):
+        click.echo(f"\n📂 Section Filters Used")
+        for s in data["section_usage"]:
+            click.echo(f"  {s['section_key']:25s}: {s['calls']:>4,}")
+
+    if data.get("top_queries"):
+        click.echo(f"\n🔍 Top Queries (preview, max 30 chars)")
+        for q in data["top_queries"]:
+            preview = q["query_preview"] or "(empty)"
+            click.echo(f"  {q['calls']:>3,}× {preview}")
+
+    if data.get("daily"):
+        click.echo(f"\n📅 Daily")
+        for d in data["daily"]:
+            bar = "█" * min(40, d["calls"])
+            click.echo(f"  {d['day']}: {d['calls']:>4,} {bar}")
+    click.echo()
+
+
+@main.command()
 @click.option("--transport", "-t", type=click.Choice(["stdio", "sse", "streamable-http"]),
               default="stdio", help="Transport protocol (default: stdio)")
 def serve(transport: str) -> None:

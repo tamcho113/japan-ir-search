@@ -16,5 +16,7 @@ wheels/
 nohup.out
 
 # Internal docs (not for public repo)
+AGENTS.md
+docs/DEPLOYMENT.md
 docs/launch-plan.md
 docs/note-article-draft.md

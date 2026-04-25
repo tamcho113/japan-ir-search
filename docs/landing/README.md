@@ -60,12 +60,12 @@ ffmpeg -ss 18 -i docs/landing/assets/demo.mp4 \
 
 ## ユーザー名の置換
 
-`index.html` 内の `tamcho113` と `__NOTE_USER__` を実際の名前に一括置換:
+`index.html` 内の `tamcho113` と `tamcho` (note ID) は既に設定済み。変更が必要な場合:
 
 ```bash
 cd docs/landing
 sed -i '' 's/tamcho113/your-actual-name/g' index.html
-sed -i '' 's/__NOTE_USER__/your-note-name/g' index.html
+sed -i '' 's|note.com/tamcho|note.com/your-note-name|g' index.html
 ```
 
 ## ローカルプレビュー
